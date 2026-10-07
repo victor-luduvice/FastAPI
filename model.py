@@ -1,6 +1,6 @@
-from sqlalchemy import create_engine, Column, Integer, String, boolean, ForeignKey, float
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Float, Enum
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.utils import ChoiceType
+
 
 db = create_engine("sqlite:///banco.db")
 
@@ -13,8 +13,8 @@ class Usuario(base):
     nome = Column("nome", String)
     email = Column("email", String, nullable=False, unique=True)
     senha = Column("senha", String)
-    ativo = Column("ativo", boolean)
-    admin = Column("admin", boolean, default=False)
+    ativo = Column("ativo", Boolean)
+    admin = Column("admin", Boolean, default=False)
 
     def __init__(self, nome, email, senha, ativo=True, admin=False):
         self.nome = nome
@@ -30,23 +30,23 @@ class Pedido(base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"))
-    status = Column("status", String, ChoiceType(STATUS_PEDIDOS))
-    preco = Column("preco", float)
+    status = Column("status", Enum("PENDENTE", "EM_ANDAMENTO", "FINALIZADO", name="status_pedidos"))
+    preco = Column("preco", Float)
 
-    def __init__(self, usuario_id, status=PENDENTE, preco=0):
+    def __init__(self, usuario_id, status="PENDENTE", preco=0):
         self.usuario_id = usuario_id
         self.status = status
         self.preco = preco
 
 
- class ItemPedido(base):
+class ItemPedido(base):
     __tablename__ = "itens"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     quantidade = Column(Integer, ForeignKey("pedidos.id"))
     sabor = Column("sabor", String)
-    tamanhho = Column("tamanhho", float)
-    preco = Column("preco", float)
+    tamanhho = Column("tamanhho", Float)
+    preco = Column("preco", Float)
     pedido_id = Column(Integer, ForeignKey("pedidos.id"))
 
     def __init__(self, pedido_id, quantidade, sabor, tamanhho, preco):
