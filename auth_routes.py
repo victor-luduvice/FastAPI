@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from model import Usuario
 from sqlalchemy.orm import Session
+from dependencies import pegar_session
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -14,17 +15,13 @@ async def home():
 
 
 @auth_router.post("/criar_conta")
-async def criar_conta(email: str, senha: str, db: Session = None):
-    if db is None:
-        raise ValueError("É necessário informar a sessão do banco")
-
-    usuario = db.query(Usuario).filter(Usuario.email == email).first()
+async def criar_conta(email: str, senha: str, nome: str, session = depends(pegar_session)):
+    usuario = session.query(Usuario).filter(Usuario.email == email).first()
     if usuario:
-        return {"message": "Usuário já existe"}
-
-    novo_usuario = Usuario(email=email, senha=senha)
-    db.add(novo_usuario)
-    db.commit()
-    db.refresh(novo_usuario)
-    return {"message": "Conta criada com sucesso", "usuario": novo_usuario} 
+        return {"message": "Usuário já existe."}
+    else:
+        novo_usuario = Usuario(email=email, senha=senha, nome=nome)
+        session.add(novo_usuario)
+        session.commit()
+        return {"message": "Conta criada com sucesso."}
 
