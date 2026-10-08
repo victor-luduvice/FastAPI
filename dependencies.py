@@ -9,3 +9,10 @@ def pegar_session():
         yield session
     finally:
         session.close()
+
+
+class loginSchema:
+    email: str
+    senha: str
+    class Config:
+        from_attributes = True

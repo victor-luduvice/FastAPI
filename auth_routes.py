@@ -28,3 +28,12 @@ async def criar_conta( usuario_schema: UsuarioSchema, session = depends(pegar_se
         session.commit()
         return {"message": f"Conta criada com sucesso.{usuario_schema.email}"}
 
+
+@auth_router.post("/login")
+async def login(usuario_schema: UsuarioSchema, session = Depends(pegar_session)):
+    usuario = session.query(Usuario).filter(Usuario.email == usuario_schema.email).first()
+    if not usuario:
+        raise HTTPException(status_code=400, detail="Email não cadastrado.")
+    if not bcrypt_context.verify(usuario_schema.senha, usuario.senha):
+        raise HTTPException(status_code=400, detail="Senha incorreta.")
+    return {"message": f"Login realizado com sucesso.{usuario_schema.email}"}
