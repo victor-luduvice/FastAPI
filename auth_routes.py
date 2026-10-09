@@ -4,8 +4,25 @@ from sqlalchemy.orm import Session
 from dependencies import pegar_session
 from main import bcrypt_context
 from schemas import UsuarioSchema
+from jose import jwt, JWTError
+from datetime import datetime, timedelta, timezone
+
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
+
+def criar_token(id_usuario: int):
+    data_expiracao = datetime.now(timezone.utc) + timedelta(hours=1)
+    dic_info = {"user_id": id_usuario, "exp": data_expiracao}
+    token=jwt.encode(dic_info, "SECRET_KEY", algorithm="HS256")
+    return token 
+
+def autenticar_usuario(usuario: UsuarioSchema, session: Session):
+    usuario_db = session.query(Usuario).filter(Usuario.email == usuario.email).first()
+    if not usuario_db:
+        raise HTTPException(status_code=400, detail="Email não cadastrado.")
+    if not bcrypt_context.verify(usuario.senha, usuario_db.senha):
+        raise HTTPException(status_code=400, detail="Senha incorreta.")
+    return usuario_db
 
 
 @auth_router.get("/")

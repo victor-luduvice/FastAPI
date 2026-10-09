@@ -25,3 +25,10 @@ async def criar_pedido(PedidoSchema: PedidoSchema, session = Depends(pegar_sessi
         session.add(novo_pedido)
         session.commit()
         return {"message": f"Pedido criado com sucesso.{PedidoSchema.id}"}  
+
+
+@order_router.get("refrestoken")
+async def refresh_token(token):
+    usuario = verificar_token(token)
+    acesso_token = criar_token(usuario.id)
+    return {"access_token": acesso_token, "token_type": "bearer"}
