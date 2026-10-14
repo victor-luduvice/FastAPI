@@ -36,7 +36,7 @@ async def criar_conta(usuario_schema: UsuarioCreate, session: Session = Depends(
         email=usuario_schema.email,
         senha=hashed_senha,
         ativo=usuario_schema.ativo,
-        admin=usuario_schema.admin,
+        admin=False,
     )
     session.add(novo_usuario)
     session.commit()

@@ -1,4 +1,5 @@
-from typing import List, Optional
+from enum import Enum
+from typing import List
 
 from pydantic import BaseModel, Field
 
@@ -13,8 +14,11 @@ class UsuarioBase(BaseModel):
         from_attributes = True
 
 
-class UsuarioCreate(UsuarioBase):
+class UsuarioCreate(BaseModel):
+    nome: str
+    email: str
     senha: str
+    ativo: bool = True
 
 
 class UsuarioLogin(BaseModel):
@@ -32,6 +36,19 @@ class UsuarioResponse(UsuarioBase):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class PedidoStatus(str, Enum):
+    PENDENTE = "PENDENTE"
+    EM_PREPARO = "EM_PREPARO"
+    PRONTO = "PRONTO"
+    EM_ENTREGA = "EM_ENTREGA"
+    FINALIZADO = "FINALIZADO"
+    CANCELADO = "CANCELADO"
+
+
+class PedidoStatusUpdate(BaseModel):
+    status: PedidoStatus
 
 
 class ItemPedidoBase(BaseModel):
@@ -54,8 +71,7 @@ class ItemPedidoResponse(ItemPedidoBase):
 
 
 class PedidoCreate(BaseModel):
-    itens: List[ItemPedidoCreate] = []
-    status: Optional[str] = "PENDENTE"
+    itens: List[ItemPedidoCreate] = Field(default_factory=list)
 
 
 class PedidoResponse(BaseModel):

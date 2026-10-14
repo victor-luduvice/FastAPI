@@ -3,9 +3,32 @@ from sqlalchemy.orm import Session
 
 from dependencies import obter_usuario_atual, pegar_session, verificar_admin
 from model import ItemPedido, Pedido, Usuario
-from schemas import ItemPedidoCreate, PedidoCreate, PedidoResponse
+from schemas import ItemPedidoCreate, PedidoCreate, PedidoResponse, PedidoStatus, PedidoStatusUpdate
 
 order_router = APIRouter(prefix="/pedidos", tags=["pedidos"])
+TRANSICOES_STATUS: dict[str, set[PedidoStatus]] = {
+    "PENDENTE": {PedidoStatus.EM_PREPARO, PedidoStatus.CANCELADO},
+    "EM_PREPARO": {PedidoStatus.PRONTO, PedidoStatus.CANCELADO},
+    "EM_ANDAMENTO": {PedidoStatus.PRONTO, PedidoStatus.CANCELADO},
+    "PRONTO": {PedidoStatus.EM_ENTREGA},
+    "EM_ENTREGA": {PedidoStatus.FINALIZADO},
+}
+
+
+def aplicar_status_pedido(pedido_id: int, novo_status: PedidoStatus, session: Session) -> Pedido:
+    pedido = session.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if novo_status not in TRANSICOES_STATUS.get(pedido.status, set()):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Não é permitido alterar o status de {pedido.status} para {novo_status.value}.",
+        )
+
+    pedido.status = novo_status.value
+    session.commit()
+    session.refresh(pedido)
+    return pedido
 
 
 @order_router.get("/", response_model=list[PedidoResponse])
@@ -26,7 +49,7 @@ async def criar_pedido(
     usuario: Usuario = Depends(obter_usuario_atual),
     session: Session = Depends(pegar_session),
 ):
-    novo_pedido = Pedido(usuario_id=usuario.id, status=pedido_schema.status or "PENDENTE", preco=0.0)
+    novo_pedido = Pedido(usuario_id=usuario.id, status=PedidoStatus.PENDENTE.value, preco=0.0)
     session.add(novo_pedido)
     session.flush()
 
@@ -78,19 +101,20 @@ async def adicionar_item_no_pedido(
 @order_router.patch("/{pedido_id}/finalizar", response_model=PedidoResponse)
 async def finalizar_pedido(
     pedido_id: int,
-    usuario: Usuario = Depends(obter_usuario_atual),
+    usuario: Usuario = Depends(verificar_admin),
     session: Session = Depends(pegar_session),
 ):
-    pedido = session.query(Pedido).filter(Pedido.id == pedido_id).first()
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if not usuario.admin and pedido.usuario_id != usuario.id:
-        raise HTTPException(status_code=403, detail="Você não pode finalizar este pedido.")
+    return aplicar_status_pedido(pedido_id, PedidoStatus.FINALIZADO, session)
 
-    pedido.status = "FINALIZADO"
-    session.commit()
-    session.refresh(pedido)
-    return pedido
+
+@order_router.patch("/{pedido_id}/status", response_model=PedidoResponse)
+async def atualizar_status_pedido(
+    pedido_id: int,
+    status_schema: PedidoStatusUpdate,
+    usuario: Usuario = Depends(verificar_admin),
+    session: Session = Depends(pegar_session),
+):
+    return aplicar_status_pedido(pedido_id, status_schema.status, session)
 
 
 @order_router.get("/admin", response_model=list[PedidoResponse])

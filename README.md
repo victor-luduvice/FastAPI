@@ -191,9 +191,14 @@ Exemplo de cadastro:
   "nome": "João",
   "email": "joao@email.com",
   "senha": "123456",
-  "ativo": true,
-  "admin": false
+  "ativo": true
 }
+```
+
+O cadastro público sempre cria uma conta comum. Para promover uma conta existente, um operador local deve executar na pasta `FastAPI`:
+
+```bash
+python promote_admin.py joao@email.com
 ```
 
 Exemplo de login:
@@ -218,16 +223,26 @@ Resposta esperada:
 
 ```http
 GET /pedidos/
+GET /pedidos/admin (somente administrador)
 POST /pedidos/
 POST /pedidos/{pedido_id}/itens
-PATCH /pedidos/{pedido_id}/finalizar
+PATCH /pedidos/{pedido_id}/status (somente administrador)
 ```
 
-Exemplo de criação de pedido:
+O status inicial é sempre definido pelo servidor como `PENDENTE`. O fluxo de delivery é:
+
+```text
+PENDENTE -> EM_PREPARO -> PRONTO -> EM_ENTREGA -> FINALIZADO
+PENDENTE -> CANCELADO
+EM_PREPARO -> CANCELADO
+```
+
+Contas comuns podem consultar os próprios pedidos, mas somente administradores podem alterar o status. Tentativas de pular etapas retornam `409 Conflict`. O antigo endpoint `PATCH /pedidos/{pedido_id}/finalizar` permanece disponível apenas para administradores e respeita as mesmas transições.
+
+Exemplo de criação de pedido (sem definir status):
 
 ```json
 {
-  "status": "PENDENTE",
   "itens": [
     {
       "sabor": "Muçarela",
@@ -242,6 +257,14 @@ Exemplo de criação de pedido:
       "preco": 39.9
     }
   ]
+}
+```
+
+Exemplo de atualização administrativa:
+
+```json
+{
+  "status": "EM_PREPARO"
 }
 ```
 
@@ -281,7 +304,7 @@ Este projeto pode evoluir com:
 - gestão de endereço do cliente;
 - status de entrega em tempo real;
 - integração com pagamentos;
-- testes automatizados com pytest;
+- notificações push ou WebSocket para substituir a atualização periódica de status;
 - documentação completa de cada operação.
 
 ## Resumo

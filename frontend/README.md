@@ -32,7 +32,19 @@ Abra `http://localhost:5173`. O Vite encaminha `/auth` e `/pedidos` para a API l
 - Cardápio responsivo com filtros, tamanhos e sacola.
 - Cadastro e login usando `/auth/criar_conta`, `/auth/login` e `/auth/me`.
 - Criação e consulta de pedidos autenticados usando `/pedidos/`.
+- Linha do tempo do pedido atualizada automaticamente a cada 15 segundos.
+- Aba de produção para administradores, com avanço de status e histórico.
 - Token de sessão armazenado no `localStorage`.
+
+## Acesso administrativo
+
+O cadastro público não concede perfil administrativo. Cadastre a conta normalmente e, em um terminal confiável na pasta `FastAPI`, promova-a com:
+
+```bash
+python promote_admin.py pessoa@example.com
+```
+
+O painel de produção atualiza os pedidos a cada 15 segundos. A API aceita apenas transições válidas e impede clientes de alterarem o status.
 
 ## Cardápio e preços
 

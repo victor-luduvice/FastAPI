@@ -1,15 +1,38 @@
 import { useEffect, useState } from 'react'
-import { ArrowDownRight, ArrowLeft, ArrowRight, Check, ChevronDown, Clock3, Flame, Leaf, LogIn, LogOut, Minus, Plus, ShoppingBag, UserRound, X } from 'lucide-react'
+import { ArrowDownRight, ArrowLeft, ArrowRight, Ban, Check, ChevronDown, Clock3, Flame, Leaf, LogIn, LogOut, Minus, Plus, RefreshCw, ShoppingBag, UserRound, X } from 'lucide-react'
 
 type User = { id: number; nome: string; email: string; admin: boolean }
 type OrderItem = { id: number; sabor: string; tamanho: string; quantidade: number; preco: number }
-type Order = { id: number; status: string; preco: number; itens: OrderItem[] }
+type Order = { id: number; usuario_id: number; status: string; preco: number; itens: OrderItem[] }
 type Pizza = { name: string; description: string; category: string; image: string; prices: Record<string, number>; tag?: string; vegetarian?: boolean }
 type CartEntry = { pizza: Pizza; size: string; quantity: number }
 
 const API = ''
 const TOKEN_KEY = 'forno-access-token'
 const sizes = ['P', 'M', 'G']
+const ORDER_STAGES = [
+  { status: 'PENDENTE', label: 'Recebido' },
+  { status: 'EM_PREPARO', label: 'Em preparo' },
+  { status: 'PRONTO', label: 'Pronto' },
+  { status: 'EM_ENTREGA', label: 'A caminho' },
+  { status: 'FINALIZADO', label: 'Entregue' },
+]
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  PENDENTE: 'Pendente',
+  EM_PREPARO: 'Em preparo',
+  EM_ANDAMENTO: 'Em preparo',
+  PRONTO: 'Pronto',
+  EM_ENTREGA: 'A caminho',
+  FINALIZADO: 'Entregue',
+  CANCELADO: 'Cancelado',
+}
+const NEXT_ORDER_STATUS: Record<string, { status: string; action: string }> = {
+  PENDENTE: { status: 'EM_PREPARO', action: 'Iniciar preparo' },
+  EM_PREPARO: { status: 'PRONTO', action: 'Marcar pronto' },
+  EM_ANDAMENTO: { status: 'PRONTO', action: 'Marcar pronto' },
+  PRONTO: { status: 'EM_ENTREGA', action: 'Saiu para entrega' },
+  EM_ENTREGA: { status: 'FINALIZADO', action: 'Finalizar pedido' },
+}
 const pizzas: Pizza[] = [
   { name: 'Margherita', description: 'Tomate italiano, fior di latte, manjericão fresco e azeite.', category: 'Clássicas', image: 'https://images.unsplash.com/photo-1579751626657-72bc17010498?auto=format&fit=crop&w=900&q=85', prices: { P: 32, M: 42, G: 54 }, tag: 'A casa', vegetarian: true },
   { name: 'Diavola', description: 'Salame picante, mozzarella cremosa e mel de pimenta.', category: 'Autorais', image: 'https://images.unsplash.com/photo-1571407970349-bc81e7e96d47?auto=format&fit=crop&w=900&q=85', prices: { P: 38, M: 49, G: 62 }, tag: 'Picante', },
@@ -20,6 +43,19 @@ const pizzas: Pizza[] = [
 ]
 
 const money = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+const normalizedStatus = (status: string) => status === 'EM_ANDAMENTO' ? 'EM_PREPARO' : status
+
+function OrderTimeline({ status }: { status: string }) {
+  const normalized = normalizedStatus(status)
+  if (normalized === 'CANCELADO') return <span className="cancelled-note">Pedido cancelado</span>
+  const currentIndex = ORDER_STAGES.findIndex((stage) => stage.status === normalized)
+  return <ol className="status-timeline" aria-label={`Progresso: ${ORDER_STATUS_LABELS[normalized] || status}`}>
+    {ORDER_STAGES.map((stage, index) => <li className={index < currentIndex ? 'is-complete' : index === currentIndex ? 'is-current' : ''} key={stage.status}>
+      <span className="timeline-dot">{index < currentIndex ? <Check size={10} /> : null}</span>
+      <span className="timeline-label">{stage.label}</span>
+    </li>)}
+  </ol>
+}
 
 async function api<T>(path: string, init: RequestInit = {}, token = localStorage.getItem(TOKEN_KEY)): Promise<T> {
   const headers = new Headers(init.headers)
@@ -39,7 +75,8 @@ function App() {
   const [cart, setCart] = useState<CartEntry[]>([])
   const [selectedSizes, setSelectedSizes] = useState<Record<string, string>>({})
   const [activeCategory, setActiveCategory] = useState('Tudo')
-  const [activeView, setActiveView] = useState<'menu' | 'orders'>('menu')
+  const [activeView, setActiveView] = useState<'menu' | 'orders' | 'kitchen'>('menu')
+  const [kitchenFilter, setKitchenFilter] = useState<'active' | 'history'>('active')
   const [cartOpen, setCartOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [registerMode, setRegisterMode] = useState(false)
@@ -57,13 +94,27 @@ function App() {
 
   useEffect(() => {
     if (!user) return
-    api<Order[]>('/pedidos/').then(setOrders).catch(() => setMessage('Não foi possível carregar seus pedidos.'))
-  }, [user])
+    const refreshOrders = async () => {
+      try {
+        const path = user.admin ? '/pedidos/admin' : '/pedidos/'
+        setOrders(await api<Order[]>(path))
+      } catch {
+        setMessage('Não foi possível atualizar os pedidos.')
+      }
+    }
+    void refreshOrders()
+    if (activeView !== 'orders' && activeView !== 'kitchen') return
+    const refreshTimer = window.setInterval(() => void refreshOrders(), 15000)
+    return () => window.clearInterval(refreshTimer)
+  }, [user, activeView])
 
   const categories = ['Tudo', 'Clássicas', 'Autorais', 'Da horta']
   const visiblePizzas = activeCategory === 'Tudo' ? pizzas : pizzas.filter((pizza) => pizza.category === activeCategory)
   const cartCount = cart.reduce((sum, entry) => sum + entry.quantity, 0)
   const cartTotal = cart.reduce((sum, entry) => sum + entry.pizza.prices[entry.size] * entry.quantity, 0)
+  const activeKitchenOrders = orders.filter((order) => !['FINALIZADO', 'CANCELADO'].includes(order.status))
+  const closedKitchenOrders = orders.filter((order) => ['FINALIZADO', 'CANCELADO'].includes(order.status))
+  const visibleKitchenOrders = kitchenFilter === 'active' ? activeKitchenOrders : closedKitchenOrders
 
   function addToCart(pizza: Pizza) {
     const size = selectedSizes[pizza.name] || 'M'
@@ -81,8 +132,30 @@ function App() {
   }
 
   async function loadOrders() {
-    const result = await api<Order[]>('/pedidos/')
+    const result = await api<Order[]>(user?.admin ? '/pedidos/admin' : '/pedidos/')
     setOrders(result)
+  }
+
+  async function updateOrderStatus(orderId: number, status: string) {
+    setLoading(true)
+    try {
+      const updatedOrder = await api<Order>(`/pedidos/${orderId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      setOrders((current) => current.map((order) => order.id === updatedOrder.id ? updatedOrder : order))
+      setMessage(`Pedido #${String(orderId).padStart(4, '0')}: ${ORDER_STATUS_LABELS[status] || status.toLowerCase()}.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível atualizar o pedido.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function cancelOrder(orderId: number) {
+    if (window.confirm(`Cancelar o pedido #${String(orderId).padStart(4, '0')}?`)) {
+      void updateOrderStatus(orderId, 'CANCELADO')
+    }
   }
 
   async function submitAccount(event: React.FormEvent<HTMLFormElement>) {
@@ -113,7 +186,7 @@ function App() {
     }
     setLoading(true)
     try {
-      await api<Order>('/pedidos/', { method: 'POST', body: JSON.stringify({ status: 'PENDENTE', itens: cart.map(({ pizza, size, quantity }) => ({ sabor: pizza.name, tamanho: size, quantidade: quantity, preco: pizza.prices[size] })) }) })
+      await api<Order>('/pedidos/', { method: 'POST', body: JSON.stringify({ itens: cart.map(({ pizza, size, quantity }) => ({ sabor: pizza.name, tamanho: size, quantidade: quantity, preco: pizza.prices[size] })) }) })
       setCart([])
       setCartOpen(false)
       setActiveView('orders')
@@ -140,6 +213,7 @@ function App() {
         <nav className="main-nav" aria-label="Navegação principal">
           <button className={activeView === 'menu' ? 'nav-link is-active' : 'nav-link'} onClick={() => setActiveView('menu')}>Cardápio</button>
           <button className={activeView === 'orders' ? 'nav-link is-active' : 'nav-link'} onClick={() => user ? setActiveView('orders') : setAccountOpen(true)}>Meus pedidos</button>
+          {user?.admin && <button className={activeView === 'kitchen' ? 'nav-link is-active' : 'nav-link'} onClick={() => setActiveView('kitchen')}>Produção</button>}
         </nav>
         <div className="top-actions">
           {user ? <button className="account-button" onClick={signOut} title="Sair"><span className="avatar">{user.nome.slice(0, 1).toUpperCase()}</span><span className="account-name">{user.nome.split(' ')[0]}</span><LogOut size={16} /></button> : <button className="account-button" onClick={() => setAccountOpen(true)}><UserRound size={17} /><span>Entrar</span></button>}
@@ -170,7 +244,7 @@ function App() {
             </article>)}</div>
           </section>
           <section className="closing-band"><Flame size={20} /><p>O forno não tem pressa.<br /><em>Você também não precisa ter.</em></p><span>ABERTO HOJE · 18H — 23H</span></section>
-        </> : <section className="orders-section"><div className="section-heading"><div><p className="eyebrow">SUA CONTA</p><h2>O caminho da <em>sua pizza.</em></h2></div><button className="text-link" onClick={() => setActiveView('menu')}><ArrowLeft size={16} /> Voltar ao cardápio</button></div>{orders.length ? <div className="orders-list">{[...orders].reverse().map((order) => <article className="order-row" key={order.id}><div className="order-number"><span>PEDIDO</span><strong>#{String(order.id).padStart(4, '0')}</strong></div><div className="order-items">{order.itens.map((item) => <span key={item.id}>{item.quantidade}× {item.sabor} <small>({item.tamanho})</small></span>)}</div><span className={`order-status status-${order.status.toLowerCase()}`}><i />{order.status.replace('_', ' ')}</span><strong className="order-price">{money(order.preco)}</strong></article>)}</div> : <div className="empty-orders"><ShoppingBag size={24} /><h3>Ainda não tem pedido por aqui.</h3><p>Escolha uma pizza e a gente cuida do resto.</p><button className="hero-cta" onClick={() => setActiveView('menu')}>Ver o cardápio <ArrowRight size={16} /></button></div>}</section>}
+        </> : activeView === 'orders' ? <section className="orders-section"><div className="section-heading"><div><p className="eyebrow">SUA CONTA</p><h2>O caminho da <em>sua pizza.</em></h2><p className="refresh-caption"><RefreshCw size={12} /> Atualizado automaticamente a cada 15 segundos</p></div><button className="text-link" onClick={() => setActiveView('menu')}><ArrowLeft size={16} /> Voltar ao cardápio</button></div>{orders.length ? <div className="orders-list">{[...orders].reverse().map((order) => <article className="order-row" key={order.id}><div className="order-number"><span>PEDIDO</span><strong>#{String(order.id).padStart(4, '0')}</strong></div><div className="order-items">{order.itens.map((item) => <span key={item.id}>{item.quantidade}× {item.sabor} <small>({item.tamanho})</small></span>)}</div><div className="order-progress-column"><span className={`order-status status-${normalizedStatus(order.status).toLowerCase()}`}><i />{ORDER_STATUS_LABELS[normalizedStatus(order.status)] || order.status}</span><OrderTimeline status={order.status} /></div><strong className="order-price">{money(order.preco)}</strong></article>)}</div> : <div className="empty-orders"><ShoppingBag size={24} /><h3>Ainda não tem pedido por aqui.</h3><p>Escolha uma pizza e a gente cuida do resto.</p><button className="hero-cta" onClick={() => setActiveView('menu')}>Ver o cardápio <ArrowRight size={16} /></button></div>}</section> : <section className="orders-section kitchen-section"><div className="section-heading"><div><p className="eyebrow">PAINEL DA EQUIPE</p><h2>Fila de <em>produção.</em></h2><p className="refresh-caption"><RefreshCw size={12} /> Atualizado automaticamente a cada 15 segundos</p></div><span className="kitchen-total">{activeKitchenOrders.length} PEDIDOS ATIVOS</span></div><div className="kitchen-toolbar" role="tablist" aria-label="Filtrar pedidos da produção"><button role="tab" aria-selected={kitchenFilter === 'active'} className={kitchenFilter === 'active' ? 'kitchen-tab is-selected' : 'kitchen-tab'} onClick={() => setKitchenFilter('active')}>Em andamento <b>{activeKitchenOrders.length}</b></button><button role="tab" aria-selected={kitchenFilter === 'history'} className={kitchenFilter === 'history' ? 'kitchen-tab is-selected' : 'kitchen-tab'} onClick={() => setKitchenFilter('history')}>Finalizados e cancelados <b>{closedKitchenOrders.length}</b></button></div>{visibleKitchenOrders.length ? <div className="kitchen-list">{[...visibleKitchenOrders].sort((first, second) => first.id - second.id).map((order) => { const next = NEXT_ORDER_STATUS[order.status]; const canCancel = ['PENDENTE', 'EM_PREPARO', 'EM_ANDAMENTO'].includes(order.status); return <article className="kitchen-row" key={order.id}><div className="kitchen-order-number"><span>PEDIDO</span><strong>#{String(order.id).padStart(4, '0')}</strong><small>Cliente #{order.usuario_id}</small></div><div className="kitchen-order-details"><span className={`order-status status-${normalizedStatus(order.status).toLowerCase()}`}><i />{ORDER_STATUS_LABELS[normalizedStatus(order.status)] || order.status}</span><div className="kitchen-items">{order.itens.map((item) => <span key={item.id}><b>{item.quantidade}×</b> {item.sabor} <small>{item.tamanho}</small></span>)}</div></div><strong className="kitchen-price">{money(order.preco)}</strong><div className="kitchen-actions">{next && <button className="status-action" onClick={() => void updateOrderStatus(order.id, next.status)} disabled={loading}>{next.action}<ArrowRight size={15} /></button>}{canCancel && <button className="cancel-action" onClick={() => cancelOrder(order.id)} disabled={loading}><Ban size={14} /> Cancelar</button>}</div></article> })}</div> : <div className="empty-orders"><ShoppingBag size={24} /><h3>{kitchenFilter === 'active' ? 'A fila está vazia.' : 'Nenhum pedido no histórico.'}</h3><p>{kitchenFilter === 'active' ? 'Novos pedidos aparecem aqui assim que chegam.' : 'Pedidos entregues ou cancelados aparecerão aqui.'}</p></div>}</section>}
       </main>
 
       <footer className="footer"><a className="wordmark footer-mark" href="#inicio"><span className="brand-mark">F<span>.</span></span><span>FORNO<br /><small>PIZZERIA</small></span></a><span>FARINHA · ÁGUA · TEMPO</span><span>FEITO COM CALMA, EM SÃO PAULO.</span></footer>
