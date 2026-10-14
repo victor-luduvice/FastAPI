@@ -132,11 +132,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-3. Instale as dependências:
+3. Instale as dependências compatíveis:
 
 ```bash
-pip install fastapi uvicorn sqlalchemy python-dotenv passlib[bcrypt] python-jose[cryptography] httpx
+pip install -r requirements.txt
 ```
+
+O `bcrypt` está fixado em `4.0.1` para manter compatibilidade com o `passlib` usado no hash e na verificação das senhas.
 
 4. Configure as variáveis de ambiente:
 
